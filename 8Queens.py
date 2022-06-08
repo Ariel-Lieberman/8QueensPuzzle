@@ -5,7 +5,9 @@ import numpy as np
 as_strided = np.lib.stride_tricks.as_strided
 
 
-def all_diagonals(x):
+def diagonals_with_trace(x):
+    # sum_of_diagonals returns a one-dimensional array with sum of all diagonals
+    # if the sum > 2 it means that more than 1 Queen is placed on this diagonal
     n = x.shape[0]
     sums = []
     sums += [x.trace(i) for i in range(n)]
@@ -18,21 +20,25 @@ def all_diagonals(x):
 
 def diagonals_with_strides(x):
     n = x.shape[0]
+    itemsize = x.itemsize
     sums = []
-    sums += [as_strided(x[0, i:], shape=(n-i,), strides=((n+1)*x.itemsize,)).sum() for i in range(n)]
-    sums += [as_strided(x[0, -(i+1):], shape=(n-i,), strides=((n-1)*x.itemsize,)).sum() for i in range(n)]
-    sums += [as_strided(x[i:, 0], shape=(n-i,), strides=((n+1)*x.itemsize,)).sum() for i in range(1, n)]
-    sums += [as_strided(x[i:, -1], shape=(n-i,), strides=((n-1)*x.itemsize,)).sum() for i in range(1, n)]
+    sums += [as_strided(x[0, i:], shape=(n-i,), strides=((n+1)*itemsize,)).sum() for i in range(n)]
+    sums += [as_strided(x[0, -(i+1):], shape=(n-i,), strides=((n-1)*itemsize,)).sum() for i in range(n)]
+    sums += [as_strided(x[i:, 0], shape=(n-i,), strides=((n+1)*itemsize,)).sum() for i in range(1, n)]
+    sums += [as_strided(x[i:, -1], shape=(n-i,), strides=((n-1)*itemsize,)).sum() for i in range(1, n)]
     return np.array(sums)
 
 
-def broadcasting(x):
-    jj = np.tile(np.arange(x.shape[1]), x.shape[0])
-    ii = (np.arange(x.shape[1])+np.arange(x.shape[0])[::-1, None]).ravel()
-    z = np.zeros(((x.shape[0]+x.shape[1]-1)*2, x.shape[1]), int)
+def fancy_indexing(x):
+    rows, cols = x.shape
+    jj = np.tile(np.arange(cols), rows)
+    ii = (np.arange(cols)+np.arange(rows)[::-1, None]).ravel()
+    # Temporary array of 0s
+    z = np.zeros(((rows+cols-1)*2, cols), int)
+    # Assign diagonals to rows in one direction
     z[ii, jj] = x.ravel()
     # The other direction
-    z[ii+(x.shape[0]+x.shape[1]-1), jj] = np.flipud(x).ravel()
+    z[ii+(rows+cols-1), jj] = x[::-1, ::].ravel()
     return z.sum(axis=1)
 
 
@@ -42,7 +48,7 @@ def stack_n_stride(x):
         x = x.T
         rows, cols = x.shape
     fill = np.zeros((cols - 1, cols), dtype=x.dtype)
-    stacked = np.vstack((x, fill, np.fliplr(x), fill, x))
+    stacked = np.vstack((x, fill, x[::, ::-1], fill, x))
     major_stride, minor_stride = stacked.strides
     strides = major_stride, minor_stride * (cols + 1)
     shape = ((rows + cols - 1)*2, cols)
@@ -50,22 +56,23 @@ def stack_n_stride(x):
 
 
 def binc(x):
-    indices = (np.arange(x.shape[1]) + np.arange(x.shape[0])[::1, None]).ravel()
-    return np.concatenate((np.bincount(indices, weights=np.fliplr(x).ravel()),
+    rows, cols = x.shape
+    indices = (np.arange(rows) + np.arange(cols)[::1, None]).ravel()
+    return np.concatenate((np.bincount(indices, weights=x[::, ::-1].ravel()),
                            np.bincount(indices, weights=x.ravel())))
 
 
-a = np.array([[1, 0, 0, 0, 0, 0, 0, 0],
-              [0, 1, 0, 0, 0, 0, 0, 0],
-              [0, 0, 1, 0, 0, 0, 0, 0],
-              [0, 0, 0, 1, 0, 0, 0, 0],
-              [0, 0, 0, 0, 1, 0, 0, 0],
-              [0, 0, 0, 0, 0, 1, 0, 0],
-              [0, 0, 0, 0, 0, 0, 1, 0],
-              [0, 0, 0, 0, 0, 0, 0, 1]])
+a = np.eye(8)
+# a = np.array([[1, 0, 0, 0, 0, 0, 0, 0],
+#               [0, 1, 0, 0, 0, 0, 0, 0],
+#               [0, 0, 1, 0, 0, 0, 0, 0],
+#               [0, 0, 0, 1, 0, 0, 0, 0],
+#               [0, 0, 0, 0, 1, 0, 0, 0],
+#               [0, 0, 0, 0, 0, 1, 0, 0],
+#               [0, 0, 0, 0, 0, 0, 1, 0],
+#               [0, 0, 0, 0, 0, 0, 0, 1]])
 
-
-sum_of_diagonals = [all_diagonals, diagonals_with_strides, broadcasting, stack_n_stride, binc]
+sum_of_diagonals = [diagonals_with_trace, diagonals_with_strides, fancy_indexing, stack_n_stride, binc]
 
 Iter = 5
 
